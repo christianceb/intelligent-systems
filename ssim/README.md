@@ -1,3 +1,4 @@
+```powershell
 conda create --name ssim-demo
 conda info --envs
 conda env list
@@ -8,3 +9,5 @@ pip install scikit-image
 
 jupyter notebook
 
+
+```
