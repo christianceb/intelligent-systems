@@ -1,3 +1,27 @@
+```sh
+# Compress and decompress data, training and testing data
+
+# Compress
+tar cvzf dogs_vs_cats.tar.gz dogs_vs_cats/
+tar cvzf data.tar.gz data/
+
+tar xvzf dogs_vs_cats.tar.gz dogs_vs_cats/
+tar cvzf data.tar.gz data/
+```
+
+```sh
+# Sync/copy local files to s3
+
+# Copy single file
+aws s3 cp dogs_vs_cats.tar.gz s3://csg2344dogscats/dogs_vs_cats.tar.gz
+
+# Sync directory
+aws s3 sync dogs_vs_cats/ s3://csg2344dogscats/dogs_vs_cats
+
+# Example: if not using role to make operations and instead use an aws-cli profile:
+aws s3 cp data.tar.gz s3://csg2344dogscats/data.tar.gz --profile xt
+```
+
 ```yaml
 no_augment:
     "1":
