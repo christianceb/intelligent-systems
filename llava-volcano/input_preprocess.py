@@ -1,4 +1,5 @@
 from io import BytesIO
+from datetime import datetime
 from math import sqrt
 from pathlib import Path
 from typing import List
@@ -8,32 +9,43 @@ import csv
 import json
 import os
 import time
+import logging
 
-dataset_path = "../compare_ds"
+def initialise_logger():
+    LOG_FOLDER = "llava-volcano/logs"
+    LOG_FILE = LOG_FOLDER + "/llava_" + datetime.now().strftime('%Y-%m-%d') + ".log"
 
-images_path = dataset_path + "/images"
+    os.makedirs(LOG_FOLDER, exist_ok=True)
 
-annotations_path = dataset_path + "/annotations"
-annotation_sources = [annotations_path + "/class_train_annotation.json", annotations_path + "/class_val_annotation.json"]
+    logging.basicConfig(filename=LOG_FILE, level=logging.INFO)
 
-postprocess_path = "llava-volcano/postprocessed_images"
+initialise_logger()
 
-guess_image_file_extension = ".png"
-target_image_file_extension = ".jpg"
+DATASET_PATH = "../compare_ds"
 
-merged_image_gutter_size = 20
-scale_max_dimension = 512
+IMAGES_PATH = DATASET_PATH + "/images"
 
-sample_dataset_percent = 0.95
+ANNOTATIONS_PATH = DATASET_PATH + "/annotations"
+ANNOTATION_SOURCES = [ANNOTATIONS_PATH + "/class_train_annotation.json", ANNOTATIONS_PATH + "/class_val_annotation.json"]
 
-skip_image_preprocessing = True
-skip_image_resize = True
+POSTPROCESS_PATH = "llava-volcano/postprocessed_images"
 
-use_existing_split_dataset = True
-existing_split_dataset_path = "llava-volcano/splitted_annotations.json"
+GUESS_IMAGE_FILE_EXTENSION = ".png"
+TARGET_IMAGE_FILE_EXTENSION = ".jpg"
 
-output_tabulated_predict_results_json_path = "llava-volcano/tabulated_predict_results.json"
-output_tabulated_predict_results_csv_path = "llava-volcano/tabulated_predict_results.csv"
+MERGED_IMAGE_GUTTER_SIZE = 20
+SCALE_MAX_DIMENSION = 512
+
+SAMPLE_DATASET_PERCENT = 0.95
+
+SKIP_IMAGE_PREPROCESSING = True
+SKIP_IMAGE_RESIZE = True
+
+USE_EXISTING_SPLIT_DATASET = True
+EXISTING_SPLIT_DATASET_PATH = "llava-volcano/splitted_annotations.json"
+
+OUTPUT_TABULATED_PREDICT_RESULTS_JSON_PATH = "llava-volcano/tabulated_predict_results.json"
+OUTPUT_TABULATED_PREDICT_RESULTS_CSV_PATH = "llava-volcano/tabulated_predict_results.csv"
 
 def main():
     make_postprocess_directory()
@@ -41,13 +53,13 @@ def main():
     annotations = merge_annotations()
     annotations = preprocess_annotations(annotations)
 
-    if not skip_image_preprocessing:
+    if not SKIP_IMAGE_PREPROCESSING:
         annotations = preprocess_images(annotations)
 
-    if use_existing_split_dataset:
+    if USE_EXISTING_SPLIT_DATASET:
         splitted_annotations = load_from_splitted_annotations()
     else:
-        splitted_annotations = split_test_data(annotations, sample_dataset_percent)
+        splitted_annotations = split_test_data(annotations, SAMPLE_DATASET_PERCENT)
 
     start_time = current_milli_time()
 
@@ -55,21 +67,36 @@ def main():
 
     save_predict_results(predict_results)
 
+    log_info(f"Annotations Size is {annotations_size}")
+    log_info(f"Attributes Size is {attributes_size}")
+    log_info(f"Correctly predicted {correct_count} attributes")
+    log_info(f"Incorrectly predicted {incorrect_count} attributes")
+    log_info(f"Time elapsed in milliseconds: {current_milli_time() - start_time}")
+
     print(f"Annotations Size is {annotations_size}")
     print(f"Attributes Size is {attributes_size}")
     print(f"Correctly predicted {correct_count} attributes")
     print(f"Incorrectly predicted {incorrect_count} attributes")
-    print(f"Time elapsed {current_milli_time() - start_time}")
+    print(f"Time elapsed: {current_milli_time() - start_time}")
+
+def log_info(message: str, context: dict = {}):
+    log = logging.getLogger()
+
+    if bool(context):
+        log.info(message + " " +json.dumps(context))
+    else:
+        log.info(message)
+
 
 def save_predict_results(results):
     # JSON
-    with open(output_tabulated_predict_results_json_path, "w") as outfile: 
+    with open(OUTPUT_TABULATED_PREDICT_RESULTS_JSON_PATH, "w") as outfile: 
         json.dump(results, outfile)
 
     # CSV
     keys = results[0].keys()
 
-    with open(output_tabulated_predict_results_csv_path, 'w', newline='') as csv_file:
+    with open(OUTPUT_TABULATED_PREDICT_RESULTS_CSV_PATH, 'w', newline='') as csv_file:
         dict_writer = csv.DictWriter(csv_file, keys)
         dict_writer.writeheader()
         dict_writer.writerows(results)
@@ -82,7 +109,11 @@ def start_predicting(annotations):
     correct_count = 0
     incorrect_count = 0
 
-    for annotation in annotations:
+    log_info("About to start predicting", { "annotations": annotations_size })
+
+    for index_annotation, annotation in enumerate(annotations):
+        log_info("Running annotation", { "index": index_annotation, "percent": int((index_annotation / annotations_size) * 100) })
+
         for attribute in annotation['attributes']:
             attributes_size += 1
             prompt = preprocess_prompt(attribute)
@@ -94,7 +125,6 @@ def start_predicting(annotations):
                 correct_count += 1
             else:
                 incorrect_count += 1
-                
 
             predict_results.append({
                 "name": annotation['name'],
@@ -123,7 +153,7 @@ def preprocess_annotations(annotations):
     return annotations
 
 def load_from_splitted_annotations():
-    with open(existing_split_dataset_path, '+r') as file:
+    with open(EXISTING_SPLIT_DATASET_PATH, '+r') as file:
         return json.load(file)
 
 def split_test_data(annotations: List, split: float = 0.5):
@@ -149,12 +179,12 @@ def split_test_data(annotations: List, split: float = 0.5):
     return carved;
 
 def save_split_test_data_json(annotations: List):
-    with open(existing_split_dataset_path, "w") as outfile: 
+    with open(EXISTING_SPLIT_DATASET_PATH, "w") as outfile: 
         json.dump(annotations, outfile)
 
 
 def make_postprocess_directory():
-    os.makedirs(postprocess_path, exist_ok=True)
+    os.makedirs(POSTPROCESS_PATH, exist_ok=True)
 
 def is_train_or_val_from_name(name: str) -> bool:
     return True if "val/" in name else False
@@ -163,7 +193,7 @@ def merge_annotations():
     merged = [];
     attributes_count = 0;
 
-    for annotation_source_location in annotation_sources:
+    for annotation_source_location in ANNOTATION_SOURCES:
         with open(annotation_source_location, '+r') as file:
             for pair in json.load(file):
                 pair['test'] = is_train_or_val_from_name(pair['name'])
@@ -210,7 +240,7 @@ def preprocess_images(merged_annotations):
         for image_meta in annotation['contents']:
             image_folder_path = "val/" if annotation['test'] else "train/"
 
-            pair_image_file = Image.open(images_path + "/" + image_folder_path + image_meta['name'] + guess_image_file_extension)
+            pair_image_file = Image.open(IMAGES_PATH + "/" + image_folder_path + image_meta['name'] + GUESS_IMAGE_FILE_EXTENSION)
             
             if pair_image_file.height > merged_image_dimensions['height']:
                 merged_image_dimensions['height'] = pair_image_file.height
@@ -220,26 +250,26 @@ def preprocess_images(merged_annotations):
             images_to_merge.append(pair_image_file)
 
         # Create the filename of the merged image file
-        merged_image_file_name = annotation['contents'][0]['name'] + "__" + annotation['contents'][1]['name'] + target_image_file_extension
+        merged_image_file_name = annotation['contents'][0]['name'] + "__" + annotation['contents'][1]['name'] + TARGET_IMAGE_FILE_EXTENSION
 
-        if not skip_image_resize:
+        if not SKIP_IMAGE_RESIZE:
             # Resize
-            images_to_merge = scale_images(images_to_merge, scale_max_dimension)
+            images_to_merge = scale_images(images_to_merge, SCALE_MAX_DIMENSION)
 
             # Determine merged image dimensions including gutter after rescaling
-            merged_image_dimensions = get_merged_image_dimensions(images_to_merge, merged_image_gutter_size)
+            merged_image_dimensions = get_merged_image_dimensions(images_to_merge, MERGED_IMAGE_GUTTER_SIZE)
 
             # Create new file and add gutter
             merged_image = Image.new('RGB', merged_image_dimensions, (0, 0, 0))
 
             # Add images
             merged_image.paste(images_to_merge[0], (0, 0)) # first image
-            merged_image.paste(images_to_merge[1], (merged_image_gutter_size + images_to_merge[0].width, 0))
+            merged_image.paste(images_to_merge[1], (MERGED_IMAGE_GUTTER_SIZE + images_to_merge[0].width, 0))
 
             # Save file
-            merged_image.save(postprocess_path + "/" +  merged_image_file_name)
+            merged_image.save(POSTPROCESS_PATH + "/" +  merged_image_file_name)
 
-        annotation['filepath'] = postprocess_path + "/" +  merged_image_file_name
+        annotation['filepath'] = POSTPROCESS_PATH + "/" +  merged_image_file_name
 
     return merged_annotations
     

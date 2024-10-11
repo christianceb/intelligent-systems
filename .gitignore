@@ -165,4 +165,5 @@ dogs_vs_cats/
 postprocessed_images/
 llava-volcano/*.json
 llava-volcano/*.csv
+llava-volcano/logs/
 *.keras
