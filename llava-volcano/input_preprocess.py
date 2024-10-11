@@ -11,8 +11,10 @@ import os
 import time
 import logging
 
+OVERRIDE_FOLDER = "llava-volcano/"
+
 def initialise_logger():
-    LOG_FOLDER = "llava-volcano/logs"
+    LOG_FOLDER = OVERRIDE_FOLDER + "logs"
     LOG_FILE = LOG_FOLDER + "/llava_" + datetime.now().strftime('%Y-%m-%d') + ".log"
 
     os.makedirs(LOG_FOLDER, exist_ok=True)
@@ -28,7 +30,7 @@ IMAGES_PATH = DATASET_PATH + "/images"
 ANNOTATIONS_PATH = DATASET_PATH + "/annotations"
 ANNOTATION_SOURCES = [ANNOTATIONS_PATH + "/class_train_annotation.json", ANNOTATIONS_PATH + "/class_val_annotation.json"]
 
-POSTPROCESS_PATH = "llava-volcano/postprocessed_images"
+POSTPROCESS_PATH = OVERRIDE_FOLDER + "postprocessed_images"
 
 GUESS_IMAGE_FILE_EXTENSION = ".png"
 TARGET_IMAGE_FILE_EXTENSION = ".jpg"
@@ -45,10 +47,10 @@ SKIP_IMAGE_RESIZE = True
 SKIP_IMAGE_PREPROCESSING = False
 USE_EXISTING_SPLIT_DATASET = False
 
-EXISTING_SPLIT_DATASET_PATH = "llava-volcano/splitted_annotations.json"
+EXISTING_SPLIT_DATASET_PATH = OVERRIDE_FOLDER + "splitted_annotations.json"
 
-OUTPUT_TABULATED_PREDICT_RESULTS_JSON_PATH = "llava-volcano/tabulated_predict_results.json"
-OUTPUT_TABULATED_PREDICT_RESULTS_CSV_PATH = "llava-volcano/tabulated_predict_results.csv"
+OUTPUT_TABULATED_PREDICT_RESULTS_JSON_PATH = OVERRIDE_FOLDER + "tabulated_predict_results.json"
+OUTPUT_TABULATED_PREDICT_RESULTS_CSV_PATH = OVERRIDE_FOLDER + "tabulated_predict_results.csv"
 
 def main():
     make_postprocess_directory()
