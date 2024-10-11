@@ -164,4 +164,5 @@ cython_debug/
 dogs_vs_cats/
 postprocessed_images/
 llava-volcano/*.json
+llava-volcano/*.csv
 *.keras

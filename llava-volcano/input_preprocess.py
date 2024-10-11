@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List
 from PIL import Image, PngImagePlugin
 from random import random
+import csv
 import json
 import os
 import time
@@ -25,13 +26,14 @@ scale_max_dimension = 512
 
 sample_dataset_percent = 0.95
 
-skip_image_preprocessing = False
+skip_image_preprocessing = True
 skip_image_resize = True
 
-use_existing_split_dataset = False
+use_existing_split_dataset = True
 existing_split_dataset_path = "llava-volcano/splitted_annotations.json"
 
-output_tabulated_predict_results_path = "llava-volcano/tabulated_predict_results.json"
+output_tabulated_predict_results_json_path = "llava-volcano/tabulated_predict_results.json"
+output_tabulated_predict_results_csv_path = "llava-volcano/tabulated_predict_results.csv"
 
 def main():
     make_postprocess_directory()
@@ -60,8 +62,18 @@ def main():
     print(f"Time elapsed {current_milli_time() - start_time}")
 
 def save_predict_results(results):
-    with open(output_tabulated_predict_results_path, "w") as outfile: 
+    # JSON
+    with open(output_tabulated_predict_results_json_path, "w") as outfile: 
         json.dump(results, outfile)
+
+    # CSV
+    keys = results[0].keys()
+
+    with open(output_tabulated_predict_results_csv_path, 'w', newline='') as csv_file:
+        dict_writer = csv.DictWriter(csv_file, keys)
+        dict_writer.writeheader()
+        dict_writer.writerows(results)
+
 
 def start_predicting(annotations):
     predict_results = []
@@ -85,6 +97,7 @@ def start_predicting(annotations):
                 
 
             predict_results.append({
+                "name": annotation['name'],
                 "correctly_predicted": result,
                 "prompt": prompt,
                 "key": attribute['key'],
@@ -232,26 +245,5 @@ def preprocess_images(merged_annotations):
     
 def predict(file, prompt: str) -> bool:
     return random() > 0.5
-
-# @dataclass
-# class PairImage:
-#     name: str
-#     url: str
-#     width: int
-#     height: int
-
-# @dataclass
-# class Attribute:
-#     key: str
-#     question: str
-#     answer: str
-
-# @dataclass
-# class Pair:
-#     name: str
-#     contents: List[PairImage]
-#     attributes: List[Attribute]
-
-
 
 main()
