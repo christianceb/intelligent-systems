@@ -36,12 +36,15 @@ TARGET_IMAGE_FILE_EXTENSION = ".jpg"
 MERGED_IMAGE_GUTTER_SIZE = 20
 SCALE_MAX_DIMENSION = 512
 
-SAMPLE_DATASET_PERCENT = 0.95
+SAMPLE_DATASET_PERCENT = 0.002
 
-SKIP_IMAGE_PREPROCESSING = True
+# Skip the expensive process of resizing
 SKIP_IMAGE_RESIZE = True
 
-USE_EXISTING_SPLIT_DATASET = True
+# You will want it that both values below are equal, especially if you are recreating the test dataset.
+SKIP_IMAGE_PREPROCESSING = False
+USE_EXISTING_SPLIT_DATASET = False
+
 EXISTING_SPLIT_DATASET_PATH = "llava-volcano/splitted_annotations.json"
 
 OUTPUT_TABULATED_PREDICT_RESULTS_JSON_PATH = "llava-volcano/tabulated_predict_results.json"
@@ -114,10 +117,15 @@ def start_predicting(annotations):
     for index_annotation, annotation in enumerate(annotations):
         log_info("Running annotation", { "index": index_annotation, "percent": int((index_annotation / annotations_size) * 100) })
 
-        for attribute in annotation['attributes']:
+        for index_attribute, attribute in enumerate(annotation['attributes']):
             attributes_size += 1
             prompt = preprocess_prompt(attribute)
             start_time = current_milli_time()
+
+            log_info("About to predict attribute in annotation", {
+                "annotation_index": index_annotation,
+                "attribute": f"{index_attribute}/{len(annotation['attributes'])}",
+            })
 
             result = predict(annotation['filepath'], prompt)
 
