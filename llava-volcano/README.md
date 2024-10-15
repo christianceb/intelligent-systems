@@ -82,6 +82,21 @@ pip install protobuf
 python evaluate.py
 ```
 
+# How it works
+The full evaluation chain follows a sequence of operations:
+1. Merges the JSON annotations from both `train/` and `val/` on the provided dataset
+2. Pre-process the annotations attributes to make it much more suitable and sensible for the model to process based on our image preprocessing. For example, if the attribute says:
+    > The pineapple in Image 1 is rough compared to Image 2. Which is image 1: After or Before?
+
+    then the prompt is changed to:
+    > The pineapple in Image 1 is rough compared to Image 2. Which is image 1: left or right?
+    
+    as the preprocessed image are put on the same image and laid side-by-side.
+3. The pair of images (`png`) of each annotation are then used to generate a new compatible image (`jpg`) where the images are resized to the target size (`SCALE_MAX_DIMENSION`) and are put together side-by-side by a gutter(`MERGED_IMAGE_GUTTER_SIZE`).
+4. The annotations are split based on the amount of annotations wanted (`SAMPLE_DATASET_PERCENT`). So if it set at `0.5` where there are 10,000 annotations, then a sample dataset of 5,000 annotations are carved.
+5. Based on the sampled dataset, we then predict the attributes on the annotation. The prompt is slightly modified (`preprocess_prompt()`) to set expectations on what are the expected answers (left or right)
+6. The results are then collated to JSON or CSV and summarised.
+
 # References
 - [LLaVa GitHub repository](https://github.com/haotian-liu/LLaVA)
 - [LLaVa Homepage](https://llava-vl.github.io/)
