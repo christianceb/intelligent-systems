@@ -48,7 +48,9 @@ POSTPROCESS_PATH = OVERRIDE_FOLDER + "postprocessed_images"
 GUESS_IMAGE_FILE_EXTENSION = ".png"
 TARGET_IMAGE_FILE_EXTENSION = ".jpg"
 MERGED_IMAGE_GUTTER_SIZE = 20
-EXISTING_SPLIT_DATASET_PATH = OVERRIDE_FOLDER + "splitted_annotations.json"
+FORCE_RECREATE_MARKING_SET = False
+EXISTING_MARKING_KEYS_PATH = OVERRIDE_FOLDER + "marking_keys.json"
+EXISTING_PREPROCESSED_ANNOTATIONS_DATASET_PATH = OVERRIDE_FOLDER + "preprocessed_annotations.json"
 OUTPUT_TABULATED_PREDICT_RESULTS_JSON_PATH = OVERRIDE_FOLDER + "tabulated_predict_results.json"
 OUTPUT_TABULATED_PREDICT_RESULTS_CSV_PATH = OVERRIDE_FOLDER + "tabulated_predict_results.csv"
 
@@ -95,21 +97,31 @@ def save_predict_results(results):
         dict_writer.writerows(results)
 
 
-def start_predicting(annotations):
+def start_predicting(annotations, marking_set: List[str]):
     """
     Predict the annotation and attributes
     """
 
     predict_results = []
     annotations_size = len(annotations)
+    sample_size = int(annotations_size * SAMPLE_DATASET_PERCENT)
     attributes_size = 0
     correct_count = 0
     incorrect_count = 0
 
-    log_info("About to start predicting", { "annotations": annotations_size })
+    log_info("About to start predicting", {
+        "sample_size": sample_size,
+    })
 
-    for index_annotation, annotation in enumerate(annotations):
-        log_info("Running annotation", { "index": index_annotation, "percent": int((index_annotation / annotations_size) * 100) })
+    for index, marking_key in enumerate(marking_set):
+        index_annotation = next(i for i, annotation in enumerate(annotations) if annotation['name'] == marking_key)
+        annotation = annotations[index_annotation]
+
+        log_info("Running annotation", {
+            "index": index_annotation,
+            "attribute_name": annotation['name'],
+            "percent": int((index / sample_size) * 100),
+        })
 
         for index_attribute, attribute in enumerate(annotation['attributes']):
             attributes_size += 1
@@ -123,8 +135,24 @@ def start_predicting(annotations):
                 "attribute": f"{index_attribute}/{len(annotation['attributes'])}",
             })
 
+            merged_image_file_name = create_merged_image_file_name(annotation)
+            filepath = POSTPROCESS_PATH + "/" + merged_image_file_name
+            
+            # Check if the file exists first
+            if not os.path.isfile(filepath):
+                raise Exception("File to be predicted is not in path.")
+
             # Have the model make a prediction
-            prediction = predict(annotation['filepath'], prompt)
+            prediction = predict(filepath, prompt)
+
+            log_info("Predicted something", {
+                "annotation_name": annotation['name'],
+                "annotation_index": index_annotation,
+                "attribute": f"{index_attribute}/{len(annotation['attributes'])}",
+                "prediction": prediction,
+                "expected_prediction": attribute['answer'],
+                "translated_expected_prediction": "Right" if attribute['answer'] == "Right" else "Left",
+            })
 
             # Based on the text produced from the prediction, evaluate if the model correctly guessed it or not
             evaluated_prediction = evaluate_prediction(prediction, attribute['answer'])
@@ -142,8 +170,13 @@ def start_predicting(annotations):
                 "key": attribute['key'],
                 "result": prediction,
                 "answer": attribute['answer'],
+                "expected_prediction": attribute['answer'],
+                "translated_expected_prediction": "Right" if attribute['answer'] == "Right" else "Left",
                 "time_elapsed": current_milli_time() - start_time
             })
+
+        if index >= sample_size:
+            break
 
     return predict_results, annotations_size, correct_count, incorrect_count, attributes_size
 
@@ -167,10 +200,12 @@ def preprocess_annotations(annotations):
         for attribute in annotation['attributes']:
             attribute['question'] = attribute['question'].replace('After or Before', "left or right")
 
+    save_preprocessed_annotations_json(annotations)
+
     return annotations
 
-def load_from_splitted_annotations():
-    with open(EXISTING_SPLIT_DATASET_PATH, '+r') as file:
+def load_from_preprocessed_annotations():
+    with open(EXISTING_PREPROCESSED_ANNOTATIONS_DATASET_PATH, '+r') as file:
         return json.load(file)
 
 def split_test_data(annotations: List, split: float = 0.5):
@@ -199,12 +234,12 @@ def split_test_data(annotations: List, split: float = 0.5):
                 break
 
     # Save the split test data into JSON
-    save_split_test_data_json(carved)
+    save_preprocessed_annotations_json(annotations)
 
-    return carved
+    return annotations
 
-def save_split_test_data_json(annotations: List):
-    with open(EXISTING_SPLIT_DATASET_PATH, "w") as outfile: 
+def save_preprocessed_annotations_json(annotations: List):
+    with open(EXISTING_PREPROCESSED_ANNOTATIONS_DATASET_PATH, "w") as outfile: 
         json.dump(annotations, outfile)
 
 
@@ -267,10 +302,24 @@ def get_merged_image_dimensions(images: List[PngImagePlugin.PngImageFile], gutte
 
     return (new_dimensions['width'], new_dimensions['height'])
 
+def create_merged_image_file_name(annotation) -> str:
+    file_name = ""
+    
+    file_name += annotation['contents'][0]['name']
+    file_name += "__"
+    file_name += annotation['contents'][1]['name']
+    file_name += "__"
+    file_name += str(SCALE_MAX_DIMENSION)
+    file_name += TARGET_IMAGE_FILE_EXTENSION
+
+    return file_name
+
 def preprocess_images(annotations):
     """
     Resizes the annotations to the target dimension. Not only that, we also convert the image dataset from PNG to JPG.
     """
+
+    start_time = current_milli_time()
 
     # Loop through the annotations
     for annotation in annotations:
@@ -278,41 +327,46 @@ def preprocess_images(annotations):
         images_to_merge: List[PngImagePlugin.PngImageFile] = []
 
         # Create the filename of the merged image file
-        merged_image_file_name = merged_image_file_name = annotation['contents'][0]['name'] + "__" + annotation['contents'][1]['name'] + TARGET_IMAGE_FILE_EXTENSION
+        merged_image_file_name = create_merged_image_file_name(annotation)
 
-        # Load images
-        for image_meta in annotation['contents']:
-            image_folder_path = "val/" if annotation['test'] else "train/"
+        if (not os.path.isfile(POSTPROCESS_PATH + "/" +  merged_image_file_name)):
+            # Load images
+            for image_meta in annotation['contents']:
+                image_folder_path = "val/" if annotation['test'] else "train/"
 
-            pair_image_file = Image.open(IMAGES_PATH + "/" + image_folder_path + image_meta['name'] + GUESS_IMAGE_FILE_EXTENSION)
-            
-            # Define our merged image's dimensions ahead of time
-            if pair_image_file.height > merged_image_dimensions['height']:
-                merged_image_dimensions['height'] = pair_image_file.height
+                pair_image_file = Image.open(IMAGES_PATH + "/" + image_folder_path + image_meta['name'] + GUESS_IMAGE_FILE_EXTENSION)
+                
+                # Define our merged image's dimensions ahead of time
+                if pair_image_file.height > merged_image_dimensions['height']:
+                    merged_image_dimensions['height'] = pair_image_file.height
 
-            merged_image_dimensions['width'] += pair_image_file.width
+                merged_image_dimensions['width'] += pair_image_file.width
 
-            images_to_merge.append(pair_image_file)
+                images_to_merge.append(pair_image_file)
 
-        if not SKIP_IMAGE_RESIZE:
-            # Resize the image
-            images_to_merge = scale_images(images_to_merge, SCALE_MAX_DIMENSION)
+            if not SKIP_IMAGE_RESIZE:
+                # Resize the image
+                images_to_merge = scale_images(images_to_merge, SCALE_MAX_DIMENSION)
 
-            # Determine merged image dimensions including gutter after rescaling
-            merged_image_dimensions = get_merged_image_dimensions(images_to_merge, MERGED_IMAGE_GUTTER_SIZE)
+                # Determine merged image dimensions including gutter after rescaling
+                merged_image_dimensions = get_merged_image_dimensions(images_to_merge, MERGED_IMAGE_GUTTER_SIZE)
 
-            # Create new file and add gutter
-            merged_image = Image.new('RGB', merged_image_dimensions, (0, 0, 0))
+                # Create new file and add gutter
+                merged_image = Image.new('RGB', merged_image_dimensions, (0, 0, 0))
 
-            # Add images
-            merged_image.paste(images_to_merge[0], (0, 0)) # first image
-            merged_image.paste(images_to_merge[1], (MERGED_IMAGE_GUTTER_SIZE + images_to_merge[0].width, 0))
+                # Add images
+                merged_image.paste(images_to_merge[0], (0, 0)) # first image
+                merged_image.paste(images_to_merge[1], (MERGED_IMAGE_GUTTER_SIZE + images_to_merge[0].width, 0))
 
-            # Save file
-            merged_image.save(POSTPROCESS_PATH + "/" +  merged_image_file_name)
+                # Save file
+                merged_image.save(POSTPROCESS_PATH + "/" +  merged_image_file_name)
 
         # Specify the merged image's filepath for later use on evaluation.
         annotation['filepath'] = POSTPROCESS_PATH + "/" +  merged_image_file_name
+
+    log_info("Image preprocessing finished", {
+        "duration": current_milli_time() - start_time
+    })
 
     return annotations
 
@@ -352,6 +406,27 @@ def evaluate_prediction(result: str, answer: str) -> bool:
     else:
         return False
 
+def use_marking_set(annotations) -> List[str]:
+    marking_set = []
+
+    if os.path.isfile(EXISTING_MARKING_KEYS_PATH) and not FORCE_RECREATE_MARKING_SET:
+        with open(EXISTING_MARKING_KEYS_PATH, '+r') as file:
+            marking_set = json.load(file)
+    else:
+        while len(marking_set) < len(annotations):
+            for annotation in annotations:
+                if len(marking_set) >= len(annotations):
+                    break
+
+                if annotation['name'] not in marking_set:
+                    if random() > 0.5:
+                        marking_set.append(annotation['name'])
+
+        with open(EXISTING_MARKING_KEYS_PATH, "w") as outfile: 
+            json.dump(marking_set, outfile)
+
+    return marking_set
+
 def main():
     make_postprocess_directory()
 
@@ -366,22 +441,13 @@ def main():
         """
         annotations = preprocess_images(annotations)
 
-    if USE_EXISTING_SPLIT_DATASET:
-        """
-        If the dataset has already been split in the respective SAMPLE_DATASET_PERCENT value, let's load that fragment of the dataset
-        """
-        splitted_annotations = load_from_splitted_annotations()
-    else:
-        """
-        Carve a new dataset based on SAMPLE_DATASET_PERCENT
-        """
-        splitted_annotations = split_test_data(annotations, SAMPLE_DATASET_PERCENT)
+    marking_set = use_marking_set(annotations)
 
     # Mark start time of predicting the dataset
     start_time = current_milli_time()
 
     # Start predicting
-    predict_results, annotations_size, correct_count, incorrect_count, attributes_size = start_predicting(splitted_annotations)
+    predict_results, annotations_size, correct_count, incorrect_count, attributes_size = start_predicting(annotations, marking_set)
 
     save_predict_results(predict_results)
 
