@@ -34,7 +34,9 @@ POSTPROCESS_PATH = OVERRIDE_FOLDER + "postprocessed_images"
 GUESS_IMAGE_FILE_EXTENSION = ".png"
 TARGET_IMAGE_FILE_EXTENSION = ".jpg"
 MERGED_IMAGE_GUTTER_SIZE = 20
-EXISTING_SPLIT_DATASET_PATH = OVERRIDE_FOLDER + "splitted_annotations.json"
+FORCE_RECREATE_MARKING_SET = False
+EXISTING_MARKING_KEYS_PATH = OVERRIDE_FOLDER + "marking_keys.json"
+EXISTING_PREPROCESSED_ANNOTATIONS_DATASET_PATH = OVERRIDE_FOLDER + "preprocessed_annotations.json"
 OUTPUT_TABULATED_PREDICT_RESULTS_JSON_PATH = OVERRIDE_FOLDER + "tabulated_predict_results.json"
 OUTPUT_TABULATED_PREDICT_RESULTS_CSV_PATH = OVERRIDE_FOLDER + "tabulated_predict_results.csv"
 
@@ -81,21 +83,31 @@ def save_predict_results(results):
         dict_writer.writerows(results)
 
 
-def start_predicting(annotations):
+def start_predicting(annotations, marking_set: List[str]):
     """
     Predict the annotation and attributes
     """
 
     predict_results = []
     annotations_size = len(annotations)
+    sample_size = int(annotations_size * SAMPLE_DATASET_PERCENT)
     attributes_size = 0
     correct_count = 0
     incorrect_count = 0
 
-    log_info("About to start predicting", { "annotations": annotations_size })
+    log_info("About to start predicting", {
+        "sample_size": sample_size,
+    })
 
-    for index_annotation, annotation in enumerate(annotations):
-        log_info("Running annotation", { "index": index_annotation, "percent": int((index_annotation / annotations_size) * 100) })
+    for index, marking_key in enumerate(marking_set):
+        index_annotation = next(i for i, annotation in enumerate(annotations) if annotation['name'] == marking_key)
+        annotation = annotations[index_annotation]
+
+        log_info("Running annotation", {
+            "index": index_annotation,
+            "attribute_name": annotation['name'],
+            "percent": int((index / sample_size) * 100),
+        })
 
         for index_attribute, attribute in enumerate(annotation['attributes']):
             attributes_size += 1
@@ -109,8 +121,15 @@ def start_predicting(annotations):
                 "attribute": f"{index_attribute}/{len(annotation['attributes'])}",
             })
 
+            merged_image_file_name = create_merged_image_file_name(annotation)
+            filepath = POSTPROCESS_PATH + "/" + merged_image_file_name
+            
+            # Check if the file exists first
+            if not os.path.isfile(filepath):
+                raise Exception("File to be predicted is not in path.")
+
             # Have the model make a prediction
-            prediction = predict(annotation['filepath'], prompt)
+            prediction = predict(filepath, prompt)
 
             log_info("Predicted something", {
                 "annotation_name": annotation['name'],
@@ -137,8 +156,13 @@ def start_predicting(annotations):
                 "key": attribute['key'],
                 "result": prediction,
                 "answer": attribute['answer'],
+                "expected_prediction": attribute['answer'],
+                "translated_expected_prediction": "Right" if attribute['answer'] == "Right" else "Left",
                 "time_elapsed": current_milli_time() - start_time
             })
+
+        if index >= sample_size:
+            break
 
     return predict_results, annotations_size, correct_count, incorrect_count, attributes_size
 
@@ -162,10 +186,12 @@ def preprocess_annotations(annotations):
         for attribute in annotation['attributes']:
             attribute['question'] = attribute['question'].replace('After or Before', "left or right")
 
+    save_preprocessed_annotations_json(annotations)
+
     return annotations
 
-def load_from_splitted_annotations():
-    with open(EXISTING_SPLIT_DATASET_PATH, '+r') as file:
+def load_from_preprocessed_annotations():
+    with open(EXISTING_PREPROCESSED_ANNOTATIONS_DATASET_PATH, '+r') as file:
         return json.load(file)
 
 def split_test_data(annotations: List, split: float = 0.5):
@@ -194,12 +220,12 @@ def split_test_data(annotations: List, split: float = 0.5):
                 break
 
     # Save the split test data into JSON
-    save_split_test_data_json(carved)
+    save_preprocessed_annotations_json(annotations)
 
-    return carved
+    return annotations
 
-def save_split_test_data_json(annotations: List):
-    with open(EXISTING_SPLIT_DATASET_PATH, "w") as outfile: 
+def save_preprocessed_annotations_json(annotations: List):
+    with open(EXISTING_PREPROCESSED_ANNOTATIONS_DATASET_PATH, "w") as outfile: 
         json.dump(annotations, outfile)
 
 
@@ -348,6 +374,27 @@ def evaluate_prediction(result: str, answer: str) -> bool:
     else:
         return False
 
+def use_marking_set(annotations) -> List[str]:
+    marking_set = []
+
+    if os.path.isfile(EXISTING_MARKING_KEYS_PATH) and not FORCE_RECREATE_MARKING_SET:
+        with open(EXISTING_MARKING_KEYS_PATH, '+r') as file:
+            marking_set = json.load(file)
+    else:
+        while len(marking_set) < len(annotations):
+            for annotation in annotations:
+                if len(marking_set) >= len(annotations):
+                    break
+
+                if annotation['name'] not in marking_set:
+                    if random() > 0.5:
+                        marking_set.append(annotation['name'])
+
+        with open(EXISTING_MARKING_KEYS_PATH, "w") as outfile: 
+            json.dump(marking_set, outfile)
+
+    return marking_set
+
 def main():
     make_postprocess_directory()
 
@@ -362,22 +409,13 @@ def main():
         """
         annotations = preprocess_images(annotations)
 
-    if USE_EXISTING_SPLIT_DATASET:
-        """
-        If the dataset has already been split in the respective SAMPLE_DATASET_PERCENT value, let's load that fragment of the dataset
-        """
-        splitted_annotations = load_from_splitted_annotations()
-    else:
-        """
-        Carve a new dataset based on SAMPLE_DATASET_PERCENT
-        """
-        splitted_annotations = split_test_data(annotations, SAMPLE_DATASET_PERCENT)
+    marking_set = use_marking_set(annotations)
 
     # Mark start time of predicting the dataset
     start_time = current_milli_time()
 
     # Start predicting
-    predict_results, annotations_size, correct_count, incorrect_count, attributes_size = start_predicting(splitted_annotations)
+    predict_results, annotations_size, correct_count, incorrect_count, attributes_size = start_predicting(annotations, marking_set)
 
     save_predict_results(predict_results)
 
