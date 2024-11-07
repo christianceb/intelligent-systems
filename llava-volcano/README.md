@@ -67,6 +67,9 @@ Dataset should also ben on the same folder as the cloned LLaVa repository and th
 `cd` to the cloned repository and run the following:
 
 ```bash
+# If using AWS SageMaker as it uses `sh` by default
+bash
+
 # Create and activate environment
 conda create -n llava python=3.10 -y
 conda activate llava

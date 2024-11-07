@@ -32,7 +32,7 @@ SKIP_IMAGE_RESIZE = True # Skip the expensive process of resizing
 
 # You will want it that both values below are equal, especially if you are recreating the test dataset.
 SKIP_IMAGE_PREPROCESSING = False
-USE_EXISTING_SPLIT_DATASET = False
+FORCE_RECREATE_MARKING_SET = False
 
 # When not in preprocessing, leave this string to `""`
 OVERRIDE_FOLDER = ""
@@ -48,7 +48,6 @@ POSTPROCESS_PATH = OVERRIDE_FOLDER + "postprocessed_images"
 GUESS_IMAGE_FILE_EXTENSION = ".png"
 TARGET_IMAGE_FILE_EXTENSION = ".jpg"
 MERGED_IMAGE_GUTTER_SIZE = 20
-FORCE_RECREATE_MARKING_SET = False
 EXISTING_MARKING_KEYS_PATH = OVERRIDE_FOLDER + "marking_keys.json"
 EXISTING_PREPROCESSED_ANNOTATIONS_DATASET_PATH = OVERRIDE_FOLDER + "preprocessed_annotations.json"
 OUTPUT_TABULATED_PREDICT_RESULTS_JSON_PATH = OVERRIDE_FOLDER + "tabulated_predict_results.json"
@@ -137,7 +136,7 @@ def start_predicting(annotations, marking_set: List[str]):
 
             merged_image_file_name = create_merged_image_file_name(annotation)
             filepath = POSTPROCESS_PATH + "/" + merged_image_file_name
-            
+
             # Check if the file exists first
             if not os.path.isfile(filepath):
                 raise Exception("File to be predicted is not in path.")
@@ -151,12 +150,12 @@ def start_predicting(annotations, marking_set: List[str]):
                 "attribute": f"{index_attribute}/{len(annotation['attributes'])}",
                 "prediction": prediction,
                 "expected_prediction": attribute['answer'],
-                "translated_expected_prediction": "Right" if attribute['answer'] == "Right" else "Left",
+                "translated_expected_prediction": "Right" if attribute['answer'] == "Before" else "Left",
             })
 
             # Based on the text produced from the prediction, evaluate if the model correctly guessed it or not
             evaluated_prediction = evaluate_prediction(prediction, attribute['answer'])
-            
+
             if evaluated_prediction:
                 correct_count += 1
             else:
@@ -170,8 +169,7 @@ def start_predicting(annotations, marking_set: List[str]):
                 "key": attribute['key'],
                 "result": prediction,
                 "answer": attribute['answer'],
-                "expected_prediction": attribute['answer'],
-                "translated_expected_prediction": "Right" if attribute['answer'] == "Right" else "Left",
+                "translated_expected_prediction": "Right" if attribute['answer'] == "Before" else "Left",
                 "time_elapsed": current_milli_time() - start_time
             })
 
